@@ -226,6 +226,8 @@ void Nx2VideoDecoder::Reset() {
     }
     impl->pending_pts.clear();
     impl->h264_packets.Reset();
+    // A stream restarted after a flush gets the same CPU fallback chance as a new one.
+    impl->received_any = false;
 }
 
 void Nx2VideoDecoder::Render(const Nx2Picture& picture, Nx2PictureFormat format, u32 width,

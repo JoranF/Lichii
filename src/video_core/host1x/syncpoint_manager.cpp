@@ -20,7 +20,13 @@ SyncpointManager::ActionHandle SyncpointManager::RegisterAction(
     }
 
     std::scoped_lock lk(guard);
-    if (syncpoint.load(std::memory_order_relaxed) >= expected_value) {
+    // Announce the waiter before re-checking the value. Increment() bumps the value and then
+    // reads pending_waiters without the lock, so with both sides seq_cst at least one of them sees
+    // the other: either we see the new value here, or Increment() takes the lock and runs us.
+    // Counting only after the check could let an increment in between skip this action forever.
+    pending_waiters.fetch_add(1, std::memory_order_seq_cst);
+    if (syncpoint.load(std::memory_order_seq_cst) >= expected_value) {
+        pending_waiters.fetch_sub(1, std::memory_order_relaxed);
         action();
         return {};
     }
@@ -31,7 +37,6 @@ SyncpointManager::ActionHandle SyncpointManager::RegisterAction(
         }
         ++it;
     }
-    pending_waiters.fetch_add(1, std::memory_order_seq_cst);
     return action_storage.emplace(it, expected_value, ++last_action_id, std::move(action))->id;
 }
 
